@@ -1,0 +1,6 @@
+/target
+.DS_Store
+*.swp
+/dist
+/FocusTrace.app
+Cargo.lock.bak
