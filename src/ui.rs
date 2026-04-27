@@ -1,6 +1,6 @@
 use crate::autostart;
 use crate::db::{Db, FocusEvent};
-use crate::settings::Settings;
+use crate::settings::{SearchScope, Settings};
 use crate::tray::{poll_menu_events, MenuAction, TrayHandle};
 use crossbeam_channel::Receiver;
 use eframe::egui;
@@ -16,11 +16,22 @@ enum SortDir { Asc, Desc }
 #[derive(PartialEq, Eq)]
 enum Tab { Logs, Settings }
 
+fn scope_label(s: SearchScope) -> &'static str {
+    match s {
+        SearchScope::All => "All columns",
+        SearchScope::Time => "Time",
+        SearchScope::App => "App",
+        SearchScope::Title => "Window Title",
+        SearchScope::Prev => "Previous App",
+    }
+}
+
 pub struct App {
     db: Arc<Db>,
     rx: Receiver<FocusEvent>,
     events: Vec<FocusEvent>,
     search: String,
+    search_scope: SearchScope,
     sort_key: SortKey,
     sort_dir: SortDir,
     tab: Tab,
@@ -37,6 +48,7 @@ impl App {
             rx,
             events,
             search: String::new(),
+            search_scope: settings.search_scope,
             sort_key: SortKey::Time,
             sort_dir: SortDir::Desc,
             tab: Tab::Logs,
@@ -57,13 +69,21 @@ impl App {
 
     fn filtered_sorted(&self) -> Vec<&FocusEvent> {
         let q = self.search.to_lowercase();
+        let scope = self.search_scope;
         let mut v: Vec<&FocusEvent> = self.events.iter().filter(|e| {
             if q.is_empty() { return true; }
-            e.app_name.to_lowercase().contains(&q)
-                || e.window_title.to_lowercase().contains(&q)
-                || e.previous_app.to_lowercase().contains(&q)
-                || e.bundle_id.to_lowercase().contains(&q)
-                || e.ts.to_rfc3339().to_lowercase().contains(&q)
+            let app = e.app_name.to_lowercase();
+            let title = e.window_title.to_lowercase();
+            let prev = e.previous_app.to_lowercase();
+            let bundle = e.bundle_id.to_lowercase();
+            let ts = e.ts.to_rfc3339().to_lowercase();
+            match scope {
+                SearchScope::All => app.contains(&q) || title.contains(&q) || prev.contains(&q) || bundle.contains(&q) || ts.contains(&q),
+                SearchScope::Time => ts.contains(&q),
+                SearchScope::App => app.contains(&q) || bundle.contains(&q),
+                SearchScope::Title => title.contains(&q),
+                SearchScope::Prev => prev.contains(&q),
+            }
         }).collect();
 
         v.sort_by(|a, b| {
@@ -96,6 +116,8 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_incoming();
+
+        let mut user_quit = false;
         for action in poll_menu_events(&self.tray) {
             match action {
                 MenuAction::Open => {
@@ -103,10 +125,20 @@ impl eframe::App for App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 MenuAction::Quit => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    user_quit = true;
                 }
             }
         }
+
+        let close_requested = ctx.input(|i| i.viewport().close_requested());
+        if close_requested && !user_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+        if user_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
 
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
@@ -130,6 +162,19 @@ impl App {
         ui.horizontal(|ui| {
             ui.label("Search:");
             ui.text_edit_singleline(&mut self.search);
+            ui.label("in");
+            let prev_scope = self.search_scope;
+            egui::ComboBox::from_id_salt("scope")
+                .selected_text(scope_label(self.search_scope))
+                .show_ui(ui, |ui| {
+                    for s in [SearchScope::All, SearchScope::Time, SearchScope::App, SearchScope::Title, SearchScope::Prev] {
+                        ui.selectable_value(&mut self.search_scope, s, scope_label(s));
+                    }
+                });
+            if self.search_scope != prev_scope {
+                self.settings.search_scope = self.search_scope;
+                self.settings.save();
+            }
             if ui.button("Clear search").clicked() { self.search.clear(); }
             ui.separator();
             ui.label(format!("{} events", self.events.len()));

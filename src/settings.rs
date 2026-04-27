@@ -1,14 +1,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SearchScope { All, Time, App, Title, Prev }
+
+impl Default for SearchScope {
+    fn default() -> Self { SearchScope::All }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub autostart: bool,
+    #[serde(default)]
+    pub search_scope: SearchScope,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { autostart: false }
+        Self { autostart: false, search_scope: SearchScope::All }
     }
 }
 
