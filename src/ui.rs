@@ -13,6 +13,24 @@ enum SortKey { Time, App, Title, Prev }
 #[derive(PartialEq, Eq)]
 enum Tab { Logs, Settings }
 
+fn header_cell(ui: &mut egui::Ui, label: &str, active: bool) -> bool {
+    let avail = ui.available_size();
+    let text = if active {
+        egui::RichText::new(label)
+            .strong()
+            .color(egui::Color32::WHITE)
+    } else {
+        egui::RichText::new(label).strong()
+    };
+    let mut button = egui::Button::new(text);
+    if active {
+        button = button.fill(egui::Color32::from_rgb(60, 110, 180));
+    } else {
+        button = button.fill(egui::Color32::TRANSPARENT);
+    }
+    ui.add_sized(avail, button).clicked()
+}
+
 fn scope_label(s: SearchScope) -> &'static str {
     match s {
         SearchScope::All => "All columns",
@@ -199,24 +217,25 @@ impl App {
             .column(Column::initial(180.0).at_least(100.0))
             .column(Column::initial(280.0).at_least(120.0))
             .column(Column::remainder().at_least(180.0))
-            .header(24.0, |mut h| {
+            .header(26.0, |mut h| {
+                let active_key = self.sort.map(|(k, _)| k);
                 h.col(|ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new(&time_label).strong()).frame(false)).clicked() {
+                    if header_cell(ui, &time_label, active_key == Some(SortKey::Time)) {
                         clicked = Some(SortKey::Time);
                     }
                 });
                 h.col(|ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new(&app_label).strong()).frame(false)).clicked() {
+                    if header_cell(ui, &app_label, active_key == Some(SortKey::App)) {
                         clicked = Some(SortKey::App);
                     }
                 });
                 h.col(|ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new(&title_label).strong()).frame(false)).clicked() {
+                    if header_cell(ui, &title_label, active_key == Some(SortKey::Title)) {
                         clicked = Some(SortKey::Title);
                     }
                 });
                 h.col(|ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new(&prev_label).strong()).frame(false)).clicked() {
+                    if header_cell(ui, &prev_label, active_key == Some(SortKey::Prev)) {
                         clicked = Some(SortKey::Prev);
                     }
                 });
