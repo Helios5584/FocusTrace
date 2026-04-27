@@ -27,6 +27,13 @@ pub fn prompt_trust() -> bool {
     }
 }
 
+pub fn is_trusted() -> bool {
+    unsafe {
+        let dict: CFDictionary<CFString, CFBoolean> = CFDictionary::from_CFType_pairs(&[]);
+        AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef())
+    }
+}
+
 pub fn window_title_for_pid(pid: i32) -> Option<String> {
     unsafe {
         let app = AXUIElementCreateApplication(pid);
@@ -39,6 +46,11 @@ pub fn window_title_for_pid(pid: i32) -> Option<String> {
         let mut window: CFTypeRef = std::ptr::null();
         let err = AXUIElementCopyAttributeValue(app, focused_attr.as_concrete_TypeRef(), &mut window);
         if err != AX_OK || window.is_null() {
+            if err == -25204 {
+                eprintln!("ax: kAXErrorAPIDisabled (no Accessibility permission)");
+            } else if err != AX_OK {
+                eprintln!("ax: AXUIElementCopyAttributeValue(focused) err={err}");
+            }
             CFRelease(app);
             return None;
         }

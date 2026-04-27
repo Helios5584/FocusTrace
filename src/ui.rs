@@ -181,6 +181,28 @@ impl App {
         ui.heading("Settings");
         ui.add_space(8.0);
 
+        #[cfg(target_os = "macos")]
+        {
+            let trusted = crate::ax::is_trusted();
+            ui.horizontal(|ui| {
+                ui.label("Accessibility permission:");
+                if trusted {
+                    ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "GRANTED");
+                } else {
+                    ui.colored_label(egui::Color32::from_rgb(220, 100, 100), "NOT GRANTED");
+                    if ui.button("Request prompt").clicked() {
+                        crate::ax::prompt_trust();
+                    }
+                }
+            });
+            ui.label("Without this, window titles for other apps stay blank.");
+            ui.label("System Settings -> Privacy & Security -> Accessibility -> FocusTrace.");
+            ui.label("After granting: fully quit (tray -> Quit) and relaunch.");
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+        }
+
         let mut autostart = self.settings.autostart;
         if ui.checkbox(&mut autostart, "Start FocusTrace at login").changed() {
             self.settings.autostart = autostart;
