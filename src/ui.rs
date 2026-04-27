@@ -100,7 +100,7 @@ impl App {
 
     fn header_btn(&mut self, ui: &mut egui::Ui, label: &str, key: SortKey) {
         let arrow = if self.sort_key == key {
-            if self.sort_dir == SortDir::Desc { " ▼" } else { " ▲" }
+            if self.sort_dir == SortDir::Desc { " v" } else { " ^" }
         } else { "" };
         if ui.button(format!("{label}{arrow}")).clicked() {
             if self.sort_key == key {
@@ -186,7 +186,8 @@ impl App {
 
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            self.header_btn(ui, "Sort: Time", SortKey::Time);
+            ui.label("Sort by:");
+            self.header_btn(ui, "Time", SortKey::Time);
             self.header_btn(ui, "App", SortKey::App);
             self.header_btn(ui, "Title", SortKey::Title);
             self.header_btn(ui, "Prev App", SortKey::Prev);
@@ -216,7 +217,7 @@ impl App {
                     row.col(|ui| { ui.label(local.format("%Y-%m-%d %H:%M:%S").to_string()); });
                     row.col(|ui| { ui.label(&e.app_name); });
                     row.col(|ui| { ui.label(&e.window_title); });
-                    let prev = if e.previous_app.is_empty() { "—".to_string() } else { e.previous_app.clone() };
+                    let prev = if e.previous_app.is_empty() { "-".to_string() } else { e.previous_app.clone() };
                     row.col(|ui| { ui.label(format!("{} -> {}", prev, e.app_name)); });
                 });
             });
@@ -228,24 +229,59 @@ impl App {
 
         #[cfg(target_os = "macos")]
         {
+            ui.heading("Accessibility Permission");
             let trusted = crate::ax::is_trusted();
             ui.horizontal(|ui| {
-                ui.label("Accessibility permission:");
+                ui.label("Status:");
                 if trusted {
                     ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "GRANTED");
                 } else {
                     ui.colored_label(egui::Color32::from_rgb(220, 100, 100), "NOT GRANTED");
-                    if ui.button("Request prompt").clicked() {
-                        crate::ax::prompt_trust();
-                    }
                 }
             });
-            ui.label("Without this, window titles for other apps stay blank.");
-            ui.label("System Settings -> Privacy & Security -> Accessibility -> FocusTrace.");
-            ui.label("After granting: fully quit (tray -> Quit) and relaunch.");
+            ui.add_space(4.0);
+            ui.label("Why: macOS requires Accessibility permission for FocusTrace to read the");
+            ui.label("focused window title of other applications. Without it, the App and");
+            ui.label("Transition columns still log, but the Window Title column stays blank for");
+            ui.label("every app except FocusTrace itself.");
+
             ui.add_space(8.0);
+            ui.label("How to grant:");
+            ui.label("  1. Open the Apple menu -> System Settings.");
+            ui.label("  2. Sidebar: Privacy & Security -> Accessibility.");
+            ui.label("  3. If FocusTrace is listed, toggle it ON.");
+            ui.label("  4. If FocusTrace is NOT listed, click the + button, navigate to the");
+            ui.label("     .app file (path shown below), select it, then toggle it ON.");
+            ui.label("  5. Quit FocusTrace fully via the menu bar icon -> Quit.");
+            ui.label("  6. Relaunch FocusTrace. Trust is read once at process start.");
+
+            ui.add_space(8.0);
+            ui.label("If permission was previously granted but the badge above says NOT GRANTED:");
+            ui.label("  - The .app was rebuilt and its code signature changed. macOS treats it");
+            ui.label("    as a different app. Remove the old FocusTrace entry in the");
+            ui.label("    Accessibility list (select it, click -), then re-add the rebuilt .app.");
+            ui.label("  - Persistent trust across rebuilds requires Developer ID code signing.");
+            ui.label("    Ad-hoc signed builds may need re-granting after each rebuild.");
+
+            ui.add_space(6.0);
+            if !trusted {
+                if ui.button("Request prompt now").clicked() {
+                    crate::ax::prompt_trust();
+                }
+            }
+            ui.add_space(6.0);
+            if let Some(exe) = std::env::current_exe().ok() {
+                let app_path = exe
+                    .ancestors()
+                    .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(exe);
+                ui.label(format!("App path: {}", app_path.display()));
+            }
+
+            ui.add_space(10.0);
             ui.separator();
-            ui.add_space(8.0);
+            ui.add_space(10.0);
         }
 
         let mut autostart = self.settings.autostart;
