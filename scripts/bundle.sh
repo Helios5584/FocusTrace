@@ -21,7 +21,8 @@ cp "macos/Info.plist" "$APP/Contents/Info.plist"
 cp "target/$TARGET/release/$BIN_NAME" "$APP/Contents/MacOS/$BIN_NAME"
 chmod +x "$APP/Contents/MacOS/$BIN_NAME"
 
-# Ad-hoc sign so Gatekeeper does not nuke it on first launch.
-codesign --force --deep --sign - "$APP" || true
+# Ad-hoc sign with stable identifier so TCC has a chance of recognizing
+# the app across rebuilds. Real persistence requires a Developer ID.
+codesign --force --deep --sign - --identifier com.focustrace.app "$APP" || true
 
 echo "==> done: $APP"

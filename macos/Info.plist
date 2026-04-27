@@ -24,7 +24,5 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>FocusTrace observes window focus changes to log application focus history.</string>
 </dict>
 </plist>

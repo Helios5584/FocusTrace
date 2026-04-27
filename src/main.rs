@@ -19,7 +19,9 @@ fn main() -> eframe::Result<()> {
 
     #[cfg(target_os = "macos")]
     {
-        ax::prompt_trust();
+        if !ax::is_trusted() {
+            ax::prompt_trust();
+        }
     }
 
     #[cfg(target_os = "macos")]
