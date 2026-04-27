@@ -48,7 +48,8 @@ mod imp {
 
                     let prev = self.ivars().last_app.replace(name.clone());
 
-                    let title = front_window_title(&bundle);
+                    let pid: i32 = objc2::msg_send![app, processIdentifier];
+                    let title = crate::ax::window_title_for_pid(pid).unwrap_or_default();
 
                     let ev = FocusEvent {
                         id: 0,
@@ -72,12 +73,6 @@ mod imp {
             });
             unsafe { msg_send_id![super(this), init] }
         }
-    }
-
-    fn front_window_title(_bundle: &str) -> String {
-        // Window title via Accessibility API requires extra perms + bindings.
-        // Stub: return empty. Future: use AXUIElementCopyAttributeValue.
-        String::new()
     }
 
     pub fn install(tx: Sender<FocusEvent>) -> Retained<FocusObserver> {

@@ -19,6 +19,7 @@ tray-icon = "0.19"
 objc2 = "0.5"
 objc2-foundation = { version = "0.2", features = ["NSString", "NSNotification", "NSRunLoop", "NSDate", "NSThread"] }
 objc2-app-kit = { version = "0.2", features = ["NSWorkspace", "NSRunningApplication", "NSApplication"] }
+core-foundation = "0.10"
 
 [profile.release]
 opt-level = 3

@@ -172,7 +172,7 @@ impl App {
                     row.col(|ui| { ui.label(&e.app_name); });
                     row.col(|ui| { ui.label(&e.window_title); });
                     let prev = if e.previous_app.is_empty() { "—".to_string() } else { e.previous_app.clone() };
-                    row.col(|ui| { ui.label(format!("{} → {}", prev, e.app_name)); });
+                    row.col(|ui| { ui.label(format!("{} -> {}", prev, e.app_name)); });
                 });
             });
     }
