@@ -10,9 +10,6 @@ use std::sync::Arc;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SortKey { Time, App, Title, Prev }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SortDir { Asc, Desc }
-
 #[derive(PartialEq, Eq)]
 enum Tab { Logs, Settings }
 
@@ -32,8 +29,7 @@ pub struct App {
     events: Vec<FocusEvent>,
     search: String,
     search_scope: SearchScope,
-    sort_key: SortKey,
-    sort_dir: SortDir,
+    sort: Option<(SortKey, bool)>,
     tab: Tab,
     settings: Settings,
     tray: TrayHandle,
@@ -49,8 +45,7 @@ impl App {
             events,
             search: String::new(),
             search_scope: settings.search_scope,
-            sort_key: SortKey::Time,
-            sort_dir: SortDir::Desc,
+            sort: None,
             tab: Tab::Logs,
             settings,
             tray,
@@ -86,29 +81,33 @@ impl App {
             }
         }).collect();
 
-        v.sort_by(|a, b| {
-            let o = match self.sort_key {
-                SortKey::Time => a.ts.cmp(&b.ts),
-                SortKey::App => a.app_name.cmp(&b.app_name),
-                SortKey::Title => a.window_title.cmp(&b.window_title),
-                SortKey::Prev => a.previous_app.cmp(&b.previous_app),
-            };
-            if self.sort_dir == SortDir::Desc { o.reverse() } else { o }
-        });
+        if let Some((key, asc)) = self.sort {
+            v.sort_by(|a, b| {
+                let o = match key {
+                    SortKey::Time => a.ts.cmp(&b.ts),
+                    SortKey::App => a.app_name.cmp(&b.app_name),
+                    SortKey::Title => a.window_title.cmp(&b.window_title),
+                    SortKey::Prev => a.previous_app.cmp(&b.previous_app),
+                };
+                if asc { o } else { o.reverse() }
+            });
+        }
         v
     }
 
-    fn header_btn(&mut self, ui: &mut egui::Ui, label: &str, key: SortKey) {
-        let arrow = if self.sort_key == key {
-            if self.sort_dir == SortDir::Desc { " v" } else { " ^" }
-        } else { "" };
-        if ui.button(format!("{label}{arrow}")).clicked() {
-            if self.sort_key == key {
-                self.sort_dir = if self.sort_dir == SortDir::Desc { SortDir::Asc } else { SortDir::Desc };
-            } else {
-                self.sort_key = key;
-                self.sort_dir = SortDir::Desc;
-            }
+    fn cycle_sort(&mut self, key: SortKey) {
+        self.sort = match self.sort {
+            Some((k, true)) if k == key => Some((key, false)),
+            Some((k, false)) if k == key => None,
+            _ => Some((key, true)),
+        };
+    }
+
+    fn header_label(&self, key: SortKey, name: &str) -> String {
+        match self.sort {
+            Some((k, true)) if k == key => format!("{name} ^"),
+            Some((k, false)) if k == key => format!("{name} v"),
+            _ => name.to_string(),
         }
     }
 }
@@ -184,16 +183,14 @@ impl App {
         });
         ui.separator();
 
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            ui.label("Sort by:");
-            self.header_btn(ui, "Time", SortKey::Time);
-            self.header_btn(ui, "App", SortKey::App);
-            self.header_btn(ui, "Title", SortKey::Title);
-            self.header_btn(ui, "Prev App", SortKey::Prev);
-        });
-
         let rows: Vec<FocusEvent> = self.filtered_sorted().into_iter().cloned().collect();
+
+        let time_label = self.header_label(SortKey::Time, "Time");
+        let app_label = self.header_label(SortKey::App, "App");
+        let title_label = self.header_label(SortKey::Title, "Window Title");
+        let prev_label = self.header_label(SortKey::Prev, "Transition");
+
+        let mut clicked: Option<SortKey> = None;
 
         TableBuilder::new(ui)
             .striped(true)
@@ -202,11 +199,27 @@ impl App {
             .column(Column::initial(180.0).at_least(100.0))
             .column(Column::initial(280.0).at_least(120.0))
             .column(Column::remainder().at_least(180.0))
-            .header(22.0, |mut h| {
-                h.col(|ui| { ui.strong("Time"); });
-                h.col(|ui| { ui.strong("App"); });
-                h.col(|ui| { ui.strong("Window Title"); });
-                h.col(|ui| { ui.strong("Transition"); });
+            .header(24.0, |mut h| {
+                h.col(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new(&time_label).strong()).frame(false)).clicked() {
+                        clicked = Some(SortKey::Time);
+                    }
+                });
+                h.col(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new(&app_label).strong()).frame(false)).clicked() {
+                        clicked = Some(SortKey::App);
+                    }
+                });
+                h.col(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new(&title_label).strong()).frame(false)).clicked() {
+                        clicked = Some(SortKey::Title);
+                    }
+                });
+                h.col(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new(&prev_label).strong()).frame(false)).clicked() {
+                        clicked = Some(SortKey::Prev);
+                    }
+                });
             })
             .body(|body| {
                 let row_h = 20.0;
@@ -221,6 +234,8 @@ impl App {
                     row.col(|ui| { ui.label(format!("{} -> {}", prev, e.app_name)); });
                 });
             });
+
+        if let Some(k) = clicked { self.cycle_sort(k); }
     }
 
     fn render_settings(&mut self, ui: &mut egui::Ui) {
