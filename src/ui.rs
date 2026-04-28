@@ -330,6 +330,12 @@ impl App {
     }
 
     fn render_settings(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| self.render_settings_body(ui));
+    }
+
+    fn render_settings_body(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
         ui.add_space(8.0);
 
