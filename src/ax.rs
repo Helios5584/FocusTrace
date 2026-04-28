@@ -28,10 +28,9 @@ pub fn prompt_trust() -> bool {
 }
 
 pub fn is_trusted() -> bool {
-    unsafe {
-        let dict: CFDictionary<CFString, CFBoolean> = CFDictionary::from_CFType_pairs(&[]);
-        AXIsProcessTrustedWithOptions(dict.as_concrete_TypeRef())
-    }
+    // Pass NULL options. Empty CFDictionary segfaults inside CFGetTypeID
+    // on macOS 26 when called from LSUIElement bundles.
+    unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) }
 }
 
 pub fn window_title_for_pid(pid: i32) -> Option<String> {

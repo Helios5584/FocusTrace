@@ -51,12 +51,15 @@ pub struct App {
     tab: Tab,
     settings: Settings,
     tray: TrayHandle,
+    quitting: bool,
+    paused: bool,
 }
 
 impl App {
     pub fn new(db: Arc<Db>, rx: Receiver<FocusEvent>, tray: TrayHandle) -> Self {
         let events = db.load_all().unwrap_or_default();
         let settings = Settings::load();
+        tray.refresh_recent(&events);
         Self {
             db,
             rx,
@@ -67,17 +70,25 @@ impl App {
             tab: Tab::Logs,
             settings,
             tray,
+            quitting: false,
+            paused: false,
         }
     }
 
-    fn drain_incoming(&mut self) {
+    fn drain_incoming(&mut self) -> bool {
+        let mut any = false;
         while let Ok(ev) = self.rx.try_recv() {
+            if self.paused {
+                continue;
+            }
             let mut ev = ev;
             if let Ok(id) = self.db.insert(&ev) {
                 ev.id = id;
                 self.events.insert(0, ev);
+                any = true;
             }
         }
+        any
     }
 
     fn filtered_sorted(&self) -> Vec<&FocusEvent> {
@@ -132,9 +143,11 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.drain_incoming();
+        let added = self.drain_incoming();
+        if added {
+            self.tray.refresh_recent(&self.events);
+        }
 
-        let mut user_quit = false;
         for action in poll_menu_events(&self.tray) {
             match action {
                 MenuAction::Open => {
@@ -142,18 +155,29 @@ impl eframe::App for App {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
                 MenuAction::Quit => {
-                    user_quit = true;
+                    self.quitting = true;
+                }
+                MenuAction::Pause(p) => {
+                    self.paused = p;
+                }
+                MenuAction::Clear => {
+                    if self.db.clear().is_ok() {
+                        self.events.clear();
+                        self.tray.refresh_recent(&self.events);
+                    }
                 }
             }
         }
 
         let close_requested = ctx.input(|i| i.viewport().close_requested());
-        if close_requested && !user_quit {
+        if close_requested && !self.quitting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
-        if user_quit {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        if self.quitting {
+            // Hard-exit. ViewportCommand::Close doesn't reliably terminate
+            // LSUIElement bundles, leaving the menu-bar icon stranded.
+            std::process::exit(0);
         }
 
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
