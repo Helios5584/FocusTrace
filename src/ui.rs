@@ -44,6 +44,7 @@ fn scope_label(s: SearchScope) -> &'static str {
 pub struct App {
     db: Arc<Db>,
     rx: Receiver<FocusEvent>,
+    reopen_rx: Receiver<()>,
     events: Vec<FocusEvent>,
     search: String,
     search_scope: SearchScope,
@@ -53,16 +54,24 @@ pub struct App {
     tray: TrayHandle,
     quitting: bool,
     paused: bool,
+    window_hidden: bool,
 }
 
 impl App {
-    pub fn new(db: Arc<Db>, rx: Receiver<FocusEvent>, tray: TrayHandle) -> Self {
+    pub fn new(
+        db: Arc<Db>,
+        rx: Receiver<FocusEvent>,
+        reopen_rx: Receiver<()>,
+        tray: TrayHandle,
+    ) -> Self {
         let events = db.load_all().unwrap_or_default();
         let settings = Settings::load();
         tray.refresh_recent(&events);
+        tray.set_visible(settings.show_tray);
         Self {
             db,
             rx,
+            reopen_rx,
             events,
             search: String::new(),
             search_scope: settings.search_scope,
@@ -72,6 +81,7 @@ impl App {
             tray,
             quitting: false,
             paused: false,
+            window_hidden: false,
         }
     }
 
@@ -124,6 +134,12 @@ impl App {
         v
     }
 
+    fn show_window(&mut self, ctx: &egui::Context) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.window_hidden = false;
+    }
+
     fn cycle_sort(&mut self, key: SortKey) {
         self.sort = match self.sort {
             Some((k, true)) if k == key => Some((key, false)),
@@ -151,8 +167,7 @@ impl eframe::App for App {
         for action in poll_menu_events(&self.tray) {
             match action {
                 MenuAction::Open => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    self.show_window(ctx);
                 }
                 MenuAction::Quit => {
                     self.quitting = true;
@@ -169,10 +184,22 @@ impl eframe::App for App {
             }
         }
 
+        // Re-show window when user re-launches the .app while we're already running.
+        // Drain to coalesce; only act when window is currently hidden so normal
+        // activation clicks don't ping-pong focus.
+        let mut reopen_pending = false;
+        while self.reopen_rx.try_recv().is_ok() {
+            reopen_pending = true;
+        }
+        if reopen_pending && self.window_hidden {
+            self.show_window(ctx);
+        }
+
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         if close_requested && !self.quitting {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.window_hidden = true;
         }
         if self.quitting {
             // Hard-exit. ViewportCommand::Close doesn't reliably terminate
@@ -219,13 +246,13 @@ impl App {
             if ui.button("Clear search").clicked() { self.search.clear(); }
             ui.separator();
             ui.label(format!("{} events", self.events.len()));
-            if ui.button("Clear all logs").clicked() {
-                if self.db.clear().is_ok() { self.events.clear(); }
+            if ui.button("Clear all logs").clicked() && self.db.clear().is_ok() {
+                self.events.clear();
             }
         });
         ui.separator();
 
-        let rows: Vec<FocusEvent> = self.filtered_sorted().into_iter().cloned().collect();
+        let rows = self.filtered_sorted();
 
         let time_label = self.header_label(SortKey::Time, "Time");
         let app_label = self.header_label(SortKey::App, "App");
@@ -267,13 +294,12 @@ impl App {
             .body(|body| {
                 let row_h = 20.0;
                 body.rows(row_h, rows.len(), |mut row| {
-                    let i = row.index();
-                    let e = &rows[i];
+                    let e = rows[row.index()];
                     let local = e.ts.with_timezone(&chrono::Local);
                     row.col(|ui| { ui.label(local.format("%Y-%m-%d %H:%M:%S").to_string()); });
                     row.col(|ui| { ui.label(&e.app_name); });
                     row.col(|ui| { ui.label(&e.window_title); });
-                    let prev = if e.previous_app.is_empty() { "-".to_string() } else { e.previous_app.clone() };
+                    let prev = if e.previous_app.is_empty() { "-" } else { e.previous_app.as_str() };
                     row.col(|ui| { ui.label(format!("{} -> {}", prev, e.app_name)); });
                 });
             });
@@ -322,13 +348,11 @@ impl App {
             ui.label("    Ad-hoc signed builds may need re-granting after each rebuild.");
 
             ui.add_space(6.0);
-            if !trusted {
-                if ui.button("Request prompt now").clicked() {
-                    crate::ax::prompt_trust();
-                }
+            if !trusted && ui.button("Request prompt now").clicked() {
+                crate::ax::prompt_trust();
             }
             ui.add_space(6.0);
-            if let Some(exe) = std::env::current_exe().ok() {
+            if let Ok(exe) = std::env::current_exe() {
                 let app_path = exe
                     .ancestors()
                     .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
@@ -352,6 +376,25 @@ impl App {
             }
         }
         ui.label(format!("LaunchAgent plist: {}", autostart::plist_path().display()));
+
+        ui.add_space(8.0);
+        let mut show_tray = self.settings.show_tray;
+        if ui.checkbox(&mut show_tray, "Show menu bar icon").changed() {
+            self.settings.show_tray = show_tray;
+            self.settings.save();
+            self.tray.set_visible(show_tray);
+        }
+        ui.label("FocusTrace keeps logging in the background after the window is closed.");
+        ui.label("Re-launching the app from Finder/Spotlight brings the window back.");
+        if !self.settings.show_tray {
+            ui.label("With the menu bar icon hidden, the only way to quit is the button below");
+            ui.label("(or relaunching the app and using this Settings tab).");
+        }
+
+        ui.add_space(8.0);
+        if ui.button("Quit FocusTrace").clicked() {
+            self.quitting = true;
+        }
 
         ui.add_space(12.0);
         ui.separator();

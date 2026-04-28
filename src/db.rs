@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Result};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 #[derive(Clone, Debug)]
 pub struct FocusEvent {
@@ -14,7 +14,7 @@ pub struct FocusEvent {
 }
 
 pub struct Db {
-    conn: Arc<Mutex<Connection>>,
+    conn: Mutex<Connection>,
 }
 
 impl Db {
@@ -35,7 +35,7 @@ impl Db {
             CREATE INDEX IF NOT EXISTS idx_ts ON focus_events(ts);
             "#,
         )?;
-        Ok(Self { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Self { conn: Mutex::new(conn) })
     }
 
     pub fn insert(&self, ev: &FocusEvent) -> Result<i64> {

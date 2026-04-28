@@ -7,12 +7,8 @@ pub fn plist_path() -> PathBuf {
     home.join("Library/LaunchAgents").join(format!("{LABEL}.plist"))
 }
 
-pub fn current_executable() -> Option<PathBuf> {
-    std::env::current_exe().ok()
-}
-
 pub fn enable() -> std::io::Result<()> {
-    let exe = current_executable().ok_or_else(|| std::io::Error::other("no exe"))?;
+    let exe = std::env::current_exe()?;
     let exe_str = exe.to_string_lossy();
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -38,8 +34,4 @@ pub fn disable() -> std::io::Result<()> {
     let path = plist_path();
     if path.exists() { std::fs::remove_file(path)?; }
     Ok(())
-}
-
-pub fn is_enabled() -> bool {
-    plist_path().exists()
 }

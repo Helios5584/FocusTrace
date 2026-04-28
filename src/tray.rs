@@ -1,20 +1,23 @@
 use crate::db::FocusEvent;
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
 pub const RECENT_SLOTS: usize = 8;
 
 pub struct TrayHandle {
     pub _tray: TrayIcon,
-    pub open_id: MenuId,
-    pub quit_id: MenuId,
-    pub clear_id: MenuId,
-    pub pause_id: MenuId,
+    pub open: MenuItem,
+    pub quit: MenuItem,
+    pub clear: MenuItem,
     pub pause: CheckMenuItem,
     pub recent: Vec<MenuItem>,
 }
 
 impl TrayHandle {
+    pub fn set_visible(&self, visible: bool) {
+        let _ = self._tray.set_visible(visible);
+    }
+
     pub fn refresh_recent(&self, events: &[FocusEvent]) {
         for (i, slot) in self.recent.iter().enumerate() {
             match events.get(i) {
@@ -120,11 +123,6 @@ pub fn install(_ctx: &eframe::egui::Context) -> TrayHandle {
     let quit = MenuItem::new("Quit", true, None);
     menu.append(&quit).ok();
 
-    let open_id = open.id().clone();
-    let quit_id = quit.id().clone();
-    let clear_id = clear.id().clone();
-    let pause_id = pause.id().clone();
-
     let tray = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
         .with_tooltip("FocusTrace")
@@ -135,10 +133,9 @@ pub fn install(_ctx: &eframe::egui::Context) -> TrayHandle {
 
     TrayHandle {
         _tray: tray,
-        open_id,
-        quit_id,
-        clear_id,
-        pause_id,
+        open,
+        quit,
+        clear,
         pause,
         recent,
     }
@@ -147,13 +144,13 @@ pub fn install(_ctx: &eframe::egui::Context) -> TrayHandle {
 pub fn poll_menu_events(handle: &TrayHandle) -> Vec<MenuAction> {
     let mut out = Vec::new();
     while let Ok(ev) = MenuEvent::receiver().try_recv() {
-        if ev.id == handle.open_id {
+        if ev.id == *handle.open.id() {
             out.push(MenuAction::Open);
-        } else if ev.id == handle.quit_id {
+        } else if ev.id == *handle.quit.id() {
             out.push(MenuAction::Quit);
-        } else if ev.id == handle.clear_id {
+        } else if ev.id == *handle.clear.id() {
             out.push(MenuAction::Clear);
-        } else if ev.id == handle.pause_id {
+        } else if ev.id == *handle.pause.id() {
             out.push(MenuAction::Pause(handle.pause.is_checked()));
         }
     }

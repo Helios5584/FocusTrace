@@ -11,7 +11,6 @@ mod imp {
     use objc2_app_kit::{NSRunningApplication, NSWorkspace};
     use objc2_foundation::{NSNotification, NSObject, NSObjectProtocol, NSString};
     use std::cell::RefCell;
-    use std::sync::Mutex;
 
     pub struct ObserverIvars {
         pub tx: Sender<FocusEvent>,
@@ -84,7 +83,6 @@ mod imp {
             let sel = objc2::sel!(activated:);
             let proto: &ProtocolObject<dyn NSObjectProtocol> = ProtocolObject::from_ref(&*observer);
             let _: () = objc2::msg_send![&nc, addObserver: proto as *const _, selector: sel, name: &*name, object: std::ptr::null::<AnyObject>()];
-            let _ = Mutex::new(()); // silence unused
             observer
         }
     }
