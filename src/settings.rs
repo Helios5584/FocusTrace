@@ -20,11 +20,18 @@ pub struct Settings {
     pub search_scope: SearchScope,
     #[serde(default = "default_true")]
     pub show_tray: bool,
+    #[serde(default)]
+    pub start_minimized: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { autostart: false, search_scope: SearchScope::All, show_tray: true }
+        Self {
+            autostart: false,
+            search_scope: SearchScope::All,
+            show_tray: true,
+            start_minimized: false,
+        }
     }
 }
 

@@ -101,7 +101,7 @@ fn make_icon() -> Icon {
 
 pub fn install(_ctx: &eframe::egui::Context) -> TrayHandle {
     let menu = Menu::new();
-    let open = MenuItem::new("Open FocusTrace", true, None);
+    let open = MenuItem::new("Show FocusTrace UI", true, None);
     menu.append(&open).ok();
     menu.append(&PredefinedMenuItem::separator()).ok();
 

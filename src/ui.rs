@@ -55,6 +55,8 @@ pub struct App {
     quitting: bool,
     paused: bool,
     window_hidden: bool,
+    launch_time: std::time::Instant,
+    pending_start_hide: bool,
 }
 
 impl App {
@@ -63,11 +65,13 @@ impl App {
         rx: Receiver<FocusEvent>,
         reopen_rx: Receiver<()>,
         tray: TrayHandle,
+        settings: Settings,
     ) -> Self {
         let events = db.load_all().unwrap_or_default();
-        let settings = Settings::load();
         tray.refresh_recent(&events);
         tray.set_visible(settings.show_tray);
+        let window_hidden = settings.start_minimized;
+        let pending_start_hide = settings.start_minimized;
         Self {
             db,
             rx,
@@ -81,7 +85,9 @@ impl App {
             tray,
             quitting: false,
             paused: false,
-            window_hidden: false,
+            window_hidden,
+            launch_time: std::time::Instant::now(),
+            pending_start_hide,
         }
     }
 
@@ -159,6 +165,19 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Force-hide for the first ~750ms when start-minimized is on. eframe's
+        // ViewportBuilder::with_visible(false) is not always honored on macOS
+        // because NSApp activation surfaces the window anyway, so we keep
+        // pushing Visible(false) until the grace window expires.
+        if self.pending_start_hide {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            if self.launch_time.elapsed() > std::time::Duration::from_millis(750) {
+                self.pending_start_hide = false;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            }
+        }
+
         let added = self.drain_incoming();
         if added {
             self.tray.refresh_recent(&self.events);
@@ -186,12 +205,15 @@ impl eframe::App for App {
 
         // Re-show window when user re-launches the .app while we're already running.
         // Drain to coalesce; only act when window is currently hidden so normal
-        // activation clicks don't ping-pong focus.
+        // activation clicks don't ping-pong focus. A short grace window after
+        // launch swallows the spurious DidBecomeActive that fires when the
+        // process first activates — needed so start-minimized stays minimized.
         let mut reopen_pending = false;
         while self.reopen_rx.try_recv().is_ok() {
             reopen_pending = true;
         }
-        if reopen_pending && self.window_hidden {
+        let past_grace = self.launch_time.elapsed() > std::time::Duration::from_millis(750);
+        if reopen_pending && self.window_hidden && past_grace {
             self.show_window(ctx);
         }
 
@@ -381,14 +403,32 @@ impl App {
         let mut show_tray = self.settings.show_tray;
         if ui.checkbox(&mut show_tray, "Show menu bar icon").changed() {
             self.settings.show_tray = show_tray;
-            self.settings.save();
             self.tray.set_visible(show_tray);
+            // Hiding the tray with start-minimized on would launch with no UI
+            // and no menu bar entry — auto-disable start-minimized.
+            if !show_tray && self.settings.start_minimized {
+                self.settings.start_minimized = false;
+            }
+            self.settings.save();
         }
         ui.label("FocusTrace keeps logging in the background after the window is closed.");
         ui.label("Re-launching the app from Finder/Spotlight brings the window back.");
         if !self.settings.show_tray {
             ui.label("With the menu bar icon hidden, the only way to quit is the button below");
             ui.label("(or relaunching the app and using this Settings tab).");
+        }
+
+        ui.add_space(8.0);
+        let mut start_min = self.settings.start_minimized;
+        if ui.checkbox(&mut start_min, "Start minimized (window hidden, menu bar icon only)").changed() {
+            self.settings.start_minimized = start_min;
+            // Start-minimized requires the menu bar icon, otherwise launching
+            // the app would yield no UI at all.
+            if start_min && !self.settings.show_tray {
+                self.settings.show_tray = true;
+                self.tray.set_visible(true);
+            }
+            self.settings.save();
         }
 
         ui.add_space(8.0);

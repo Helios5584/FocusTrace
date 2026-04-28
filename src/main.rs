@@ -13,10 +13,12 @@ mod ui;
 
 use crossbeam_channel::unbounded;
 use db::Db;
+use settings::Settings;
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
     let db = Arc::new(Db::open().expect("open db"));
+    let settings = Settings::load();
     let (tx, rx) = unbounded();
     let (reopen_tx, reopen_rx) = unbounded::<()>();
 
@@ -37,11 +39,13 @@ fn main() -> eframe::Result<()> {
         let _ = reopen_tx;
     }
 
+    let start_visible = !settings.start_minimized;
     let opts = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([900.0, 600.0])
             .with_min_inner_size([520.0, 320.0])
-            .with_title("FocusTrace"),
+            .with_title("FocusTrace")
+            .with_visible(start_visible),
         ..Default::default()
     };
 
@@ -50,7 +54,7 @@ fn main() -> eframe::Result<()> {
         opts,
         Box::new(move |cc| {
             let tray_handle = tray::install(&cc.egui_ctx);
-            Ok(Box::new(ui::App::new(db, rx, reopen_rx, tray_handle)))
+            Ok(Box::new(ui::App::new(db, rx, reopen_rx, tray_handle, settings)))
         }),
     )
 }
