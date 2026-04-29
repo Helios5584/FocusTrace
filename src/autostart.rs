@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 const LABEL: &str = "com.focustrace.agent";
+const BUNDLE_ID: &str = "com.focustrace.app";
 
 pub fn plist_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -10,6 +11,9 @@ pub fn plist_path() -> PathBuf {
 pub fn enable() -> std::io::Result<()> {
     let exe = std::env::current_exe()?;
     let exe_str = exe.to_string_lossy();
+    // AssociatedBundleIdentifiers ties this LaunchAgent to the parent .app's
+    // Background Items entry, so macOS does not treat it as an orphan and
+    // re-notify on every login.
     let plist = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -21,6 +25,11 @@ pub fn enable() -> std::io::Result<()> {
     </array>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><false/>
+    <key>LimitLoadToSessionType</key><string>Aqua</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>{BUNDLE_ID}</string>
+    </array>
 </dict>
 </plist>
 "#);
